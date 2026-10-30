@@ -31,6 +31,10 @@ Other "H616/H618 TV boxes" with different DRAM, PMIC or Wi-Fi wiring are **not**
 
 Proven on **one unit, on 2026-10-30**:
 
+| First boot: the one-time vendor-area wipe service running (blue LED = PH6) | Armbian 6.18.53 login on the stick (IP addresses blacked out) |
+|---|---|
+| ![First boot of the flashed stick, dq10-wipe-vendor zero-filling the old vendor ranges](docs/images/dq10-first-boot-wipe.jpg) | ![Armbian 26.8.7 trixie login banner, kernel 6.18.53-current-sunxi64, 1.93G RAM, 47 °C](docs/images/dq10-armbian-login.jpg) |
+
 * The BROM-to-FEL path works (button + power), the decoded vendor DRAM parameters work with the mainline LPDDR3 code (2 GiB present, no aliasing), and the BROM dumped from the unit **matches the published NBROM** (`smaeul/sunxi-blobs`, sha256 `da649502bc3fc09fcbde1d50beaaddbf0e9390e0c7fcaacb86fac399a9188a1a`, i.e. the normal, non-secure-boot ROM).
 * Route L (below) completed: the eMMC user area was zeroed, the Armbian root file system and the new U-Boot head were written, and the read-back verification finished with `ALL VERIFIED` (exit code 0).
 * The stick **booted Armbian 6.18.53** (`6.18.53-current-sunxi64`) from the eMMC and **Wi-Fi (AIC8800D80) works**.
