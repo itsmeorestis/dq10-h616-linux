@@ -46,7 +46,7 @@ chk() { # name expected_rc got_rc [pattern file]
     echo "FAIL $1 (expected rc=$2 got $3 pattern='${4:-}')"; cat "${5:-/dev/null}"; failn=$((failn+1))
   fi
 }
-mkimg() { truncate -s "$2" "$1"; dd if=$PRE of="$1" bs=1M conv=notrunc status=none; sync; }   # sync: after a 15 GB write the buffered 36 MiB could still be dirty when the script reads the loop with O_DIRECT
+mkimg() { truncate -s "$2" "$1"; dd if=$PRE of="$1" bs=1M conv=notrunc status=none; sync "$1"; }   # sync THIS file only (a bare sync can hang on an unrelated filesystem): the buffered 36 MiB must not still be dirty when the script reads the loop with O_DIRECT
 mkimg good.img $SZ
 L=$(nl good.img); echo "loop good: $L"
 
