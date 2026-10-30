@@ -130,13 +130,13 @@ if [ "$SKIPID" = 0 ]; then
   if [ -z "$ID_SHA" ] && [ -n "$HASHES" ] && [ -r "$HASHES" ]; then       # derive it from the 'preboot-area' line of your own hash list
     ID_SHA=$(awk '$1=="preboot-area" && $2==0 && $3==73728 { sub(/\r$/, "", $4); print $4; exit }' "$HASHES")
   fi
-  [ ${#ID_SHA} = 64 ] || fail "no identity hash: set DQ10_IDENTITY_SHA256 or DQ10_PARTITION_HASHES (from YOUR backup, see docs/FLASH-PLAN.md), or pass --skip-identity if you understand why"
+  [ ${#ID_SHA} = 64 ] || fail "no identity hash: set DQ10_IDENTITY_SHA256 or DQ10_PARTITION_HASHES (from YOUR backup, see docs/FLASH-PLAN.md), or, ONLY when repeating after an interrupted write of this script, --skip-identity. Never use --skip-identity on a first write without a backup (a read-only DRY RUN with it is fine)"
   echo "== identity: first 36 MiB (sectors 0..73727) must equal the pre-boot area of your backup"
   ID=$(dd if="$DEV" bs=1M count=36 iflag=direct status=none | sha256sum | cut -c1-64) || ID=READ-ERROR
   echo "   got $ID"
   [ "$ID" = "$ID_SHA" ] || fail "identity hash differs from your backup (not the original vendor eMMC state). If an earlier run of THIS script was interrupted, repeat with --skip-identity; otherwise STOP and investigate"
 else
-  echo "== identity check SKIPPED (--skip-identity): only valid when repeating after an interrupted write of this script"
+  echo "== identity check SKIPPED (--skip-identity): fine for a read-only dry run; for a WRITE only valid when repeating after an interrupted write of this script"
 fi
 if [ "$GO" = 1 ]; then
   case "$WPLINE" in *"is on"*) fail "the sd driver reported WRITE PROTECT for $BN: the stick exports the eMMC read-only (flasher booted with flasher-ro.uenv / dq10mode=ro). Power-cycle into FEL and load flasher-rw.uenv.";; esac

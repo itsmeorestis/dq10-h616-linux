@@ -23,6 +23,8 @@ All of the following should hold; the first two are the quickest checks.
 4. **Wi-Fi chip:** a vendor `dmesg` / `lsmod` shows `aic8800d80`, SDIO ids `c8a1:0082`/`c8a1:0182`.
 5. **eMMC size:** exactly 15,634,268,160 bytes (the flasher and `ums-flash.sh` refuse any other size).
 
+**If your eMMC size differs, this port does not support it as is.** The size is hard-coded in: `scripts/flasher-init.sh` (`EMMC_BYTES`, `EMMC_SECTORS`), `scripts/ums-flash.sh` (`SZ`, `TOTAL_SECTORS`, `count=14910`), `scripts/build-image.sh` (`TOTAL`), `scripts/make-hash-list.sh` (`EXPECT`), `scripts/device/dq10-commit.sh` (the `blockdev --getsize64` check), `tests/test-ums-flash.sh` and `tests/test-flasher-init.sh`, and in the layout numbers of `docs/FLASH-PLAN.md` (the sector 30535680 / 30212096 figures and the 14910 MiB). A different size probably means a different board revision: check the DRAM first (step 3 above). Do not just edit the constants.
+
 Other "H616/H618 TV boxes" with different DRAM, PMIC or Wi-Fi wiring are **not** supported by these files. Do not flash them.
 
 ## Status
@@ -44,12 +46,12 @@ Route L = **FEL (button) -> small Linux flasher in RAM -> the eMMC is exported a
 
 Needs: a PC with Linux (or Windows + WSL2 + `usbipd-win`), `sunxi-tools` (`sunxi-fel` 1.4.2), a **USB A-to-A cable**, an HDMI display (the status screen and one LED are the only feedback), the stick on its **own power adapter**, no microSD inserted.
 
-1. **Get the binaries.** Binaries are not in git. Build them (`docs/BUILD-NOTES.md` section 13: U-Boot + TF-A, the DTB from `dts/`, `sudo scripts/build-image.sh`, `sudo scripts/build-flasher.sh`) or take the generic Release when it exists. To log in over SSH build with `AUTHORIZED_KEY=/path/to/your_key.pub sudo -E scripts/build-image.sh` (a **public** key; without it no key is baked in and the image has console login only).
+1. **Get the binaries: you build them yourself.** Binaries are not in git, and **no prebuilt image or Release is published**: every built image contains the AIC8800 Wi-Fi firmware blobs (via the Radxa package) and their redistribution terms were **not audited**. Any future Release would have to be cleared on that point first and built **without** `AUTHORIZED_KEY`. Build with `docs/BUILD-NOTES.md` section 13 (U-Boot + TF-A, the DTB from `dts/`, `sudo scripts/build-image.sh`, `sudo scripts/build-flasher.sh`). To log in over SSH build with `AUTHORIZED_KEY=/path/to/your_key.pub sudo -E scripts/build-image.sh` (a **public** key; the script refuses private keys and non-key files; without it no key is baked in and the image has console login only). Your own build has its own image hashes: the maintainer hashes quoted in `docs/FLASH-PLAN.md` are for the reference build only; `image/SHA256SUMS` from your build is the reference for your image.
 2. **Optional:** `scripts/set-wifi.sh` bakes Wi-Fi credentials into a copy of the root file system.
 3. **L1-L2:** enter FEL, `bash scripts/fel-dram-test.sh` (RAM only).
 4. **L3:** the U-Boot reach test (`flasher/reach-*.uenv`), RAM only.
-5. **L4:** load the flasher **read-only** (`flasher/flasher-ro.uenv`), bind the gadget `1d6b:0104` with `usbipd bind --force`, attach it to WSL, take **your backup** and make **your hash list** (`docs/FLASH-PLAN.md`), then `bash scripts/ums-flash.sh $DEV --compare-hashes`.
-6. **L5-L6:** load the flasher **writable** (`flasher-rw.uenv`), run `bash scripts/ums-flash.sh $DEV` (dry run), then `bash scripts/ums-flash.sh $DEV --yes-wipe-everything`; the exit code must be 0 (`ALL VERIFIED`).
+5. **L4:** load the flasher **read-only** (`flasher/flasher-ro.uenv`), bind the gadget `1d6b:0104` with `usbipd bind --force`, attach it to WSL, then in this order: dry run with `--skip-identity` (read-only; you have no identity hash yet), **your backup** (verified), **your hash list**, `--compare-hashes` must say `COMPARE OK`, and a dry run **without** `--skip-identity` must pass (`docs/FLASH-PLAN.md`, L4).
+6. **L5-L6:** only with `BACKUP-GZ-OK` and `COMPARE OK` in hand: load the flasher **writable** (`flasher-rw.uenv`), run `bash scripts/ums-flash.sh $DEV` (dry run), then `bash scripts/ums-flash.sh $DEV --yes-wipe-everything`; the exit code must be 0 (`ALL VERIFIED`). Never use `--skip-identity` on a first write (only to repeat after an interrupted run of the script).
 7. **L7-L8:** detach, unplug the adapter and the A-A cable, power up **without** the button. First boot is slow (10-20 min): a service zero-fills the free ranges that held the vendor system.
 
 If anything is unclear, stop; every step before L6 is read-only on the stick.
@@ -95,7 +97,7 @@ Our own files (scripts, tests, diagnostics, documentation, defconfigs, uEnv scri
 Third-party components that this repository only references (they are not in git; check each upstream for its exact terms before you redistribute a built image):
 
 * U-Boot (GPL-2.0-or-later), Linux kernel and Armbian build framework (GPL-2.0), TF-A (BSD-3-Clause), BusyBox (GPL-2.0), sunxi-tools (GPL-2.0).
-* The Armbian image itself, Debian packages in it, and the Radxa `aic8800` driver and firmware (redistribution terms of the AIC firmware blobs were **not audited**; see `docs/BUILD-NOTES.md` section 8).
+* The Armbian image itself, Debian packages in it, and the Radxa `aic8800` driver and firmware. The AIC8800 firmware blobs are **not included in this repository**, and their redistribution terms are **unknown / not audited** (the only note on this is in `docs/BUILD-NOTES.md` section 8.3, which records that the terms were not audited). **For that reason no prebuilt image is published**; a built image contains those blobs.
 * The published BROM dumps (`smaeul/sunxi-blobs`) are used only as a reference for a hash comparison.
 
 ## Credits

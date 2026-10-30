@@ -27,12 +27,14 @@ The flasher refuses to write unless it recognises the stick as an unmodified ven
 
 1. **Back up the whole eMMC user area (15,634,268,160 bytes) before you change anything.** The least intrusive way is the read-only session of Route L (step L4): the vendor Android never runs, the disk is exported read-only. With `$DEV` verified as in L4:
    ```
+   set -o pipefail            # without it a dd read error inside "dd | gzip" is hidden and gzip -t still passes on a short stream
    export BACKUP=$HOME/dq10-vendor-backup; mkdir -p $BACKUP
    blockdev --getsize64 $DEV                                   # MUST be 15634268160
    dd if=$DEV bs=1M iflag=direct status=progress | gzip -1 > $BACKUP/dq10-mmcblk0.img.gz
    gzip -t $BACKUP/dq10-mmcblk0.img.gz && echo BACKUP-GZ-OK
+   ls -l $BACKUP/dq10-mmcblk0.img.gz; gzip -dc $BACKUP/dq10-mmcblk0.img.gz | wc -c    # MUST print 15634268160 (do not rely on gzip -l: it wraps at 4 GiB)
    ```
-   (On L4's first dry run use `--skip-identity`, because you have no identity hash yet; the dry run writes nothing.) Keep the backup somewhere safe and **private**: it contains the unit's unique IDs, the vendor firmware and its malware (`MALWARE-IOCS.md`). The eMMC hardware boot partitions and RPMB are not reachable this way (the test unit's boot partitions read all-zero).
+   This is exactly the order of step L4 below (the commands are repeated there in place). On L4's first dry run use `--skip-identity`, because you have no identity hash yet; the dry run writes nothing. **What proves the backup is `COMPARE OK` in step 3** (every partition of the stick equals the hash of your backup); `gzip -t` alone does not. Keep the backup somewhere safe and **private**: it contains the unit's unique IDs, the vendor firmware and its malware (`MALWARE-IOCS.md`). The eMMC hardware boot partitions and RPMB are not reachable this way (the test unit's boot partitions read all-zero).
 2. **Generate your hash list** from the backup:
    ```
    gzip -dc $BACKUP/dq10-mmcblk0.img.gz > $BACKUP/dq10-mmcblk0.img          # ~15 GB of disk space
@@ -55,12 +57,15 @@ Status: HDMI text screen; **LED PH6: fast blink = starting, very fast = error (n
 [WSL]
 ```
 cd $PKG
+# The next two lines apply FROM THE SECOND SESSION ON only. On your very first run there is no backup and no hash list yet:
+# skip them; both are created in step L4 (backup first, then the hash list). Do not write anything to the stick before L4 is complete.
 gzip -t $BACKUP/dq10-mmcblk0.img.gz && echo BACKUP-GZ-OK     # YOUR only copy of the vendor data (15,634,268,160 B uncompressed)
 export DQ10_PARTITION_HASHES=$BACKUP/partition-hashes.txt     # YOUR hash list (format below); ums-flash.sh needs it (or DQ10_IDENTITY_SHA256)
 (cd image && sha256sum -c --ignore-missing SHA256SUMS)       # written by scripts/build-image.sh; ums-flash.sh also checks it
 (cd flasher && sha256sum -c SHA256SUMS)
 sha256sum image/rootfs.ext4.gz image/head-emmc-4MiB.bin uboot/u-boot-sunxi-with-spl.bin
-#   the values of the maintainer's reference build (it had an SSH key baked in; your own build, or a release, has other image hashes):
+#   the values of the maintainer's reference build (it had an SSH key baked in; YOUR OWN build has other image hashes - use the values from
+#   your image/SHA256SUMS, which scripts/build-image.sh wrote, wherever this runbook quotes them; no prebuilt image is published):
 #   ff72f2cc2b25292793208c91c9c27237c54f3059a0d8b684af326d6602f8f1ab  rootfs.ext4.gz
 #   81566c4080f1703974b42e9ddf2ec2e20de3a4e835792fb90fb817e0d2b0dc95  head-emmc-4MiB.bin
 #   48691413166cb499c2f2328290e7ff5fd700064e980b57871a934ce693e1ea72  u-boot-sunxi-with-spl.bin
@@ -127,15 +132,38 @@ usbipd attach --wsl --hardware-id 1d6b:0104
 lsblk -o NAME,SIZE,VENDOR,MODEL,TRAN,RO,MOUNTPOINT   # the new disk: TRAN usb, VENDOR DQ10, MODEL "eMMC flasher", RO 1, 14.6G
 DEV=/dev/sdX                                         # <- the REAL name; WSL's own virtual disks are also sdX but are not USB
 blockdev --getsize64 $DEV                            # MUST be 15634268160
-bash scripts/ums-flash.sh $DEV                       # dry run: guards + identity (sectors 0..73727 must hash to the 'preboot-area' line of YOUR hash list; the very first time, before you have a backup, add --skip-identity)
-bash scripts/ums-flash.sh $DEV --compare-hashes 2>&1 | tee ~/compare-before-$(date +%F-%H%M).log     # READ-ONLY, every partition vs partition-hashes.txt
+
+# --- ORDER MATTERS. On first contact you have no backup and no hash list, so the identity of the stick is unknown. ---
+# (1) dry run with --skip-identity: guards only, READ-ONLY session, nothing is written (the only legitimate use of --skip-identity here)
+bash scripts/ums-flash.sh $DEV --skip-identity
+
+# (2) full backup of YOUR stick (see "Your own backup and hash list"). pipefail so that a dd read error is not hidden by gzip
+set -o pipefail
+export BACKUP=$HOME/dq10-vendor-backup; mkdir -p $BACKUP
+dd if=$DEV bs=1M iflag=direct status=progress | gzip -1 > $BACKUP/dq10-mmcblk0.img.gz
+gzip -t $BACKUP/dq10-mmcblk0.img.gz && echo BACKUP-GZ-OK                       # must print BACKUP-GZ-OK
+ls -l $BACKUP/dq10-mmcblk0.img.gz; gzip -dc $BACKUP/dq10-mmcblk0.img.gz | wc -c   # must print 15634268160
+
+# (3) your hash list from the backup (~15 GB of disk space), then export it
+gzip -dc $BACKUP/dq10-mmcblk0.img.gz > $BACKUP/dq10-mmcblk0.img
+bash scripts/make-hash-list.sh $BACKUP/dq10-mmcblk0.img > $BACKUP/partition-hashes.txt
+export DQ10_PARTITION_HASHES=$BACKUP/partition-hashes.txt
+
+# (4) the stick must equal the backup: READ-ONLY, every partition vs partition-hashes.txt. It MUST end with COMPARE OK
+bash scripts/ums-flash.sh $DEV --compare-hashes 2>&1 | tee ~/compare-before-$(date +%F-%H%M).log
+
+# (5) dry run WITHOUT --skip-identity (sectors 0..73727 must hash to the 'preboot-area' line of YOUR list). It MUST end with DRY RUN OK
+bash scripts/ums-flash.sh $DEV
 ```
-* **Compare result:** one `OK` line per line of your hash list and `COMPARE OK` = the eMMC is exactly the backed-up vendor state. Any `BAD` is **information, not a blocker for the flash** (everything is zeroed anyway): `bootloader_a` BAD = Windows wrote to the FAT volume on 2026-10-29 (fact 7). **Record the result.** (The test unit's result is in BUILD-NOTES 19.7 / 21.) `preboot-area` BAD means sectors 0..73727 changed: the dry run's identity check will refuse (step L6 then needs `--skip-identity`, only if you understand why).
+**On a repeat session** (backup and list already exist, L0 done in full) steps (1)-(3) are skipped: export `DQ10_PARTITION_HASHES`, then run (4) and (5).
+* **Compare result:** one `OK` line per line of your hash list and `COMPARE OK` = the eMMC is exactly the backed-up vendor state. Any `BAD` is **information, not a blocker for the flash** (everything is zeroed anyway): `bootloader_a` BAD = Windows wrote to the FAT volume on 2026-10-29 (fact 7). **Record the result.** (The test unit's result is in BUILD-NOTES 19.7 / 21.) `preboot-area` BAD means sectors 0..73727 changed: the dry run's identity check will refuse. Stop and find out why (a known cause is BUILD-NOTES 21); do not reach for `--skip-identity` on a first write.
 * Size differs: wrong device, **STOP**. Dry run `REFUSE:` names the failed guard; never edit a guard.
 * If the dry run says **no `1d6b:0104`** or the HDMI screen shows an error / the LED is very fast: nothing is exported. Read the HDMI screen (kernel usb/musb/phy lines are printed), power-cycle into FEL (L1) and retry. If a second try fails, repeat with `dq10speed=full` (forces USB full speed: `sed 's/dq10mode=ro/dq10mode=ro dq10speed=full/' flasher/flasher-ro.uenv > /tmp/ro-fs.uenv` and load that file instead). If it still fails the Linux MUSB gadget shares the unknown cold-entry USB problem of fact 5: Route L is unavailable (see the table); do not improvise.
 * Optional: `ls /dev/ttyACM*` in WSL (needs the `cdc_acm` module in the WSL kernel) gives the diagnostic root shell of the flasher.
 
 ## L5. Flasher, WRITABLE session
+
+> **HARD STOP before L5 and L6: no wipe without `BACKUP-GZ-OK` AND `COMPARE OK` (both from L4, for THIS stick).** If either is missing, go back to L4. **`--skip-identity` is never used on a first write.** It exists only to repeat the write after an interrupted run of `ums-flash.sh` itself (the pre-boot area then no longer matches your list). Do not use it to get past a missing identity hash: that means you have no backup.
 
 Detach in [PS]: `usbipd detach --hardware-id 1d6b:0104`. Unplug the adapter, FEL again (L1; re-attach `1f3a:efe8`), then:
 [WSL]
@@ -147,6 +175,8 @@ sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin \
 HDMI must say **`mode: WRITABLE (dq10mode=rw)`** and the **LED must be SOLID** (not blinking). Windows must **not** show a new drive letter (the bind of L4 applies; if one appears, unplug the A-A cable at once, do not open it, and report). [PS] `usbipd attach --wsl --hardware-id 1d6b:0104`, then [WSL]: `lsblk -o NAME,SIZE,VENDOR,MODEL,TRAN,RO` (find `DEV` again; it may have a different letter) and `bash scripts/ums-flash.sh $DEV` (dry run again: it also checks that the sd driver did not report write protect).
 
 ## L6. The real write (point of no return for the vendor Android - the backup is the way back)
+
+Hard stop (see L5): `BACKUP-GZ-OK` and `COMPARE OK` must both have been printed for this stick, and the L5 dry run (without `--skip-identity`) must have said `DRY RUN OK`.
 
 [WSL]
 ```
@@ -347,7 +377,8 @@ $ADB exec-in 'zcat | dd of=/dev/block/mmcblk0 bs=1048576 seek=2048 conv=notrunc,
 $ADB shell 'while pidof dd >/dev/null; do sleep 2; done; sync; blockdev --flushbufs /dev/block/mmcblk0; echo 3 > /proc/sys/vm/drop_caches'
 # 5.3 read back exactly 1,342,177,280 bytes from the media and hash
 $ADB exec-out 'dd if=/dev/block/mmcblk0 bs=1048576 skip=2048 count=1280 2>/dev/null | sha256sum'
-#   MUST equal 3ce4160814fb2885eb50a5df54fd35670a99cd8c42a5dd8ee7c1603e835b770b
+#   MUST equal 3ce4160814fb2885eb50a5df54fd35670a99cd8c42a5dd8ee7c1603e835b770b  (the maintainer's reference build; for YOUR OWN build use
+#   the rootfs.ext4 line of your image/SHA256SUMS: grep ' rootfs.ext4$' image/SHA256SUMS)
 ```
 If the hash differs: repeat 5.1-5.3 (junk space; nothing important is lost). If it keeps failing, stop; the stick still boots Android.
 
@@ -358,7 +389,8 @@ If the hash differs: repeat 5.1-5.3 (junk space; nothing important is lost). If 
 $ADB exec-in 'cat > /dev/dq10-head.bin' < image/head-emmc-4MiB.bin
 $ADB exec-in 'cat > /dev/dq10-commit.sh' < scripts/device/dq10-commit.sh
 $ADB shell 'sha256sum /dev/dq10-head.bin | cut -c1-64; ls -l /dev/dq10-head.bin'
-#   MUST be 81566c4080f1703974b42e9ddf2ec2e20de3a4e835792fb90fb817e0d2b0dc95 and 4194304 bytes
+#   MUST be 81566c4080f1703974b42e9ddf2ec2e20de3a4e835792fb90fb817e0d2b0dc95 (maintainer's reference build; for YOUR OWN build use the
+#   head-emmc-4MiB.bin line of your image/SHA256SUMS, AND set HEADSHA in scripts/device/dq10-commit.sh to the same value before pushing it) and 4194304 bytes
 # 6.2 final go/no-go: re-run prep (4.0), 4.2/4.3 checks, and the 5.3 hash.  Then run the commit detached (survives an adb drop;
 #     the script sets oom_score_adj -1000 for itself because the stick has only tens of MB free):
 $ADB shell 'nohup sh /dev/dq10-commit.sh >/dev/null 2>&1 &'

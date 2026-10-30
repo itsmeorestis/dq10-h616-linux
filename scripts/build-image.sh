@@ -24,6 +24,18 @@ OVL=${OVL:-$PKG/image-overlay}
 OUT=${OUT:-$WORK/final}
 AUTHORIZED_KEY=${AUTHORIZED_KEY:-}
 [ -z "$AUTHORIZED_KEY" ] || [ -r "$AUTHORIZED_KEY" ] || { echo "AUTHORIZED_KEY=$AUTHORIZED_KEY is not a readable file"; exit 1; }
+# AUTHORIZED_KEY must be a PUBLIC key file.  A typo such as ~/.ssh/id_ed25519 (the PRIVATE key) would otherwise be baked into an image
+# that may be shared later.  Refuse anything that contains "PRIVATE KEY" or any non-empty, non-comment line that does not start with
+# ssh-, ecdsa- or sk- (the public-key types), and a file with no key line at all.  Nothing of the file's content is printed.
+if [ -n "$AUTHORIZED_KEY" ]; then
+  if grep -q 'PRIVATE KEY' "$AUTHORIZED_KEY"; then
+    echo "REFUSED: AUTHORIZED_KEY=$AUTHORIZED_KEY contains 'PRIVATE KEY'. Pass the PUBLIC key file (the .pub file), never the private key."; exit 1
+  fi
+  if grep -Ev '^[[:space:]]*(#|$)' "$AUTHORIZED_KEY" | grep -Evq '^[[:space:]]*(ssh-|ecdsa-|sk-)'; then
+    echo "REFUSED: AUTHORIZED_KEY=$AUTHORIZED_KEY has a line that is not a public key (every non-empty, non-comment line must start with ssh-, ecdsa- or sk-). Pass the .pub file."; exit 1
+  fi
+  grep -Eq '^[[:space:]]*(ssh-|ecdsa-|sk-)' "$AUTHORIZED_KEY" || { echo "REFUSED: AUTHORIZED_KEY=$AUTHORIZED_KEY contains no public key line"; exit 1; }
+fi
 DTSNAME=sun50i-h616-dq10-athena-p1
 TOTAL=30535680             # eMMC sectors (15,634,268,160 / 512)
 P1_START_EMMC=4194304      # 2 GiB: inside the free tail of the Android 'super' partition

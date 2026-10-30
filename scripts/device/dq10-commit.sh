@@ -8,6 +8,9 @@
 echo -1000 > /proc/self/oom_score_adj 2>/dev/null
 H=/dev/dq10-head.bin
 D=/dev/block/mmcblk0
+# HEADSHA pins the maintainer's REFERENCE build of head-emmc-4MiB.bin. A head image you built yourself has a different hash: replace this
+# value with the head-emmc-4MiB.bin line of YOUR image/SHA256SUMS (build-image.sh writes it) before pushing the script to the stick,
+# otherwise the script aborts at the hash check below (safe, but useless).
 HEADSHA=81566c4080f1703974b42e9ddf2ec2e20de3a4e835792fb90fb817e0d2b0dc95
 LOG=/dev/dq10-commit.log
 exec > $LOG 2>&1
