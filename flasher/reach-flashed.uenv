@@ -1,0 +1,3 @@
+#=uEnv
+blink=gpio clear PH6; sleep 1; gpio set PH6; sleep 1; gpio clear PH6; sleep 1; gpio set PH6
+bootcmd=run blink; mw.l 0x00100000 0xd10c0002; sleep 12; reset

@@ -1,0 +1,8 @@
+# From WSL (stick in FEL mode, attached with usbipd). Addresses are U-Boot's sunxi arm64 defaults (include/configs/sunxi-common.h):
+#   kernel_addr_r=0x40080000  fdt_addr_r=0x4fa00000  scriptaddr/fel script=0x4fc00000  ramdisk_addr_r=0x4ff00000
+sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin   write 0x40080000 felbundle/Image   write 0x4fa00000 felbundle/dq10.dtb   write 0x4ff00000 felbundle/initramfs.cpio.gz   write 0x4fc00000 felbundle/boot.scr
+# initramfs size: 4730137 bytes (0x482d19) is baked into boot.scr
+# SUPERSEDED (revision 4): this boot.scr route failed on 2026-10-30 (autoboot with BOOTDELAY=2/preboot); the working pattern is a uEnv with
+# bootdelay=-2 (diag/d5-linux.uenv). Its dq10.dtb is the revision-3 DTB (PH6 LED active-high; the LED is active-low).
+# After the test boot: unplug the stick's power adapter. A plain power-up no longer returns to FEL (the vendor efex flag is gone); to re-enter FEL hold the button while plugging in the power. Nothing was written to the eMMC.
+# The flash route is Route L (docs/FLASH-PLAN.md Part 1, flasher/, scripts/ums-flash.sh).

@@ -1,0 +1,14 @@
+# NOTE (repository copy): the initramfs size baked into the *.uenv files and quoted below is that of the maintainer's build.
+# scripts/build-flasher.sh regenerates flasher/*.uenv, SHA256SUMS and this file for YOUR build; use the regenerated ones.
+# ROUTE L - load the flasher into RAM (nothing is written to the stick).  From WSL, stick in FEL (button held while plugging in the
+# power adapter, USB A-A cable to the PC, usbipd-attached 1f3a:efe8), working dir = the package root.
+# Addresses (U-Boot sunxi defaults): kernel 0x40080000 (booti moves it to 0x40200000, image_size 36372480), fdt 0x4fa00000,
+# ramdisk 0x4ff00000, uEnv 0x43100000.  initramfs size 2134891 bytes (0x20936b) is baked into the uEnv.
+# READ-ONLY session first (identity + partition-hash compare):
+sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin write 0x40080000 flasher/Image write 0x4fa00000 flasher/dq10-flasher.dtb write 0x4ff00000 flasher/initramfs.cpio.gz write 0x43100000 flasher/flasher-ro.uenv
+# WRITE session (after the read-only checks passed; power-cycle into FEL again first):
+sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin write 0x40080000 flasher/Image write 0x4fa00000 flasher/dq10-flasher.dtb write 0x4ff00000 flasher/initramfs.cpio.gz write 0x43100000 flasher/flasher-rw.uenv
+# The -v output must contain "Passing boot info via sunxi SPL: script address = 0x43100000".
+# U-Boot reach test (run each 3x, hold the button as in the plan; FEL must come back after ~15 s = bootcmd was reached):
+sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin write 0x43100000 flasher/reach-override.uenv
+sunxi-fel -v -p uboot uboot/u-boot-sunxi-with-spl.bin write 0x43100000 flasher/reach-flashed.uenv      # compiled-in config, keyed autoboot

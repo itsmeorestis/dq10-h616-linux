@@ -1,0 +1,5 @@
+#=uEnv
+bootdelay=-2
+preboot=
+blink=gpio clear PH6; sleep 1; gpio set PH6; sleep 1; gpio clear PH6; sleep 1; gpio set PH6
+bootcmd=run blink; if mmc dev 1; then mw.l 0x00100000 0xd10c0002; mmc info; run blink; sleep 12; reset; else gpio clear PH6; fi

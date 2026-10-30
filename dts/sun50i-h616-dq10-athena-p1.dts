@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Device tree for the "DQ10" Android TV stick (Allwinner "athena_p1" board,
+ * SoC string H616-family; H313/H616/H618 not distinguishable in software).
+ *
+ * Derived from sun50i-h313-tanix-tx1.dts (Linux v6.18.53, Copyright (C) 2024
+ * Arm Ltd.) plus Armbian's sunxi-6.18 H616 display-pipeline DT patches
+ * (patches.drm/0041, 0042), which provide the &de/&hdmi/&hdmi_out nodes.
+ *
+ * Every board-specific fact below was read from the running vendor device tree
+ * (/sys/firmware/fdt of the running stick) unless marked
+ * "UNVERIFIED".  Evidence tags in comments: [vendor-DT] = read from that DT,
+ * [TX1] = copied from the TX1 board because the vendor DT is consistent with
+ * it but does not prove it.
+ */
+
+/dts-v1/;
+
+#include "sun50i-h616.dtsi"
+#include "sun50i-h616-cpu-opp.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/leds/common.h>
+
+/ {
+	model = "DQ10 TV stick (athena_p1)";
+	compatible = "dq10,athena-p1", "allwinner,sun50i-h616";
+
+	aliases {
+		serial0 = &uart0;
+		ethernet0 = &sdio_wifi;
+		/* keep the eMMC at mmc0/mmcblk0 whether or not an SD card is present */
+		mmc0 = &mmc2;
+		mmc1 = &mmc1;
+		mmc2 = &mmc0;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	connector {
+		compatible = "hdmi-connector";
+		type = "a";
+
+		port {
+			hdmi_con_in: endpoint {
+				remote-endpoint = <&hdmi_out_con>;
+			};
+		};
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		/*
+		 * [vendor-DT] gpio_para: normal_led = gpio_pin_1 = PH6 (output),
+		 * standby_led = gpio_pin_2 = PH7; the vendor DT says *_led_light = 1.
+		 * [hardware 2026-10-30] PH6 is ACTIVE LOW in reality: driving the pin low
+		 * lights the (blue) LED, so the vendor "light = 1" is not the pin level.
+		 * PH7 (standby LED) is assumed to be wired the same way - UNVERIFIED;
+		 * it is "off" by default either way, so a wrong guess shows at most a
+		 * lit standby LED.
+		 */
+		/*
+		 * Heartbeat instead of a static "on": with no serial console and
+		 * possibly no working HDMI on the first boot, a blinking LED is the
+		 * only sign that the kernel is alive (SPL/U-Boot leave it solid on).
+		 */
+		led-0 {
+			function = LED_FUNCTION_POWER;
+			gpios = <&pio 7 6 GPIO_ACTIVE_LOW>; /* PH6, active low (hardware-verified) */
+			linux,default-trigger = "heartbeat";
+		};
+
+		led-1 {
+			function = LED_FUNCTION_STANDBY;
+			gpios = <&pio 7 7 GPIO_ACTIVE_LOW>; /* PH7, UNVERIFIED polarity (assumed like PH6) */
+			default-state = "off";
+		};
+	};
+
+	/*
+	 * Wi-Fi/BT combo: AICSemi AIC8800D80 on SDIO (SDIO 0xc8a1:0x0082 = Wi-Fi
+	 * function, 0xc8a1:0x0182 = BSP/BT function; chip rev 0x7 / subrev 0x82
+	 * = "U02" firmware set).  Wiring, all [vendor-DT] (rfkill, btlpm, sdc1):
+	 *   - SDIO bus        : SMHC1 (sdc1, 0x4021000 = mainline &mmc1), 4 bit,
+	 *                       vendor max-frequency 50 MHz, cap-sdio-irq, no-sd/no-mmc,
+	 *                       vmmc = dldo1 (3.3 V), vqmmc = aldo1 (1.8 V, vendor
+	 *                       sets sunxi-dis-signal-vol-sw => I/O fixed at 1.8 V)
+	 *   - WL_REG_ON       : PG18 (wlan_regon = bank 6 pin 18)   -> reset-gpios below
+	 *   - WL host-wake    : PG15 (wlan_hostwake = bank 6 pin 15) -> not used by the
+	 *                       Radxa driver (CONFIG_OOB=n, in-band SDIO irq)
+	 *   - 32 kHz LPO      : SoC RTC clock fan-out on PG10 (clk_losc_pins_a /
+	 *                       "osc32k-out")                         -> ext_clock below
+	 *   - BT              : UART1 on PG6/PG7/PG8/PG9 (TX/RX/RTS/CTS), bt_rst_n = PG19,
+	 *                       bt_wake = PG17, bt_hostwake = PG16, 24 MHz "dcxo24m-out".
+	 *                       NOT described here: there is no mainline binding for the
+	 *                       AIC8800 UART bluetooth; Wi-Fi is the requirement.
+	 * Identical to the TX1 wiring (PG18 + 32 kHz fan-out).
+	 */
+	wifi_pwrseq: pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		clocks = <&rtc CLK_OSC32K_FANOUT>;
+		clock-names = "ext_clock";
+		pinctrl-0 = <&x32clk_fanout_pin>;
+		pinctrl-names = "default";
+		reset-gpios = <&pio 6 18 GPIO_ACTIVE_LOW>; /* PG18 */
+		/* chip needs time after WL_REG_ON before it answers on SDIO (UNVERIFIED value) */
+		post-power-on-delay-ms = <200>;
+	};
+
+	reg_vcc5v: vcc5v {
+		/* board wide 5V supply directly from the DC input */
+		compatible = "regulator-fixed";
+		regulator-name = "vcc-5v";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-always-on;
+	};
+
+	/* [vendor-DT] usb0-drvvbus: regulator-fixed, 5 V, gpio PH8, active high */
+	reg_usb0_vbus: usb0-vbus {
+		compatible = "regulator-fixed";
+		regulator-name = "usb0-vbus";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&reg_vcc5v>;
+		gpio = <&pio 7 8 GPIO_ACTIVE_HIGH>; /* PH8 */
+		enable-active-high;
+	};
+};
+
+&cpu0 {
+	/* [vendor-DT] cpu-supply = axp1530 dcdc2 */
+	cpu-supply = <&reg_dcdc2>;
+};
+
+&de {
+	status = "okay";
+};
+
+&ehci0 {
+	status = "okay";
+};
+
+&gpu {
+	mali-supply = <&reg_dcdc1>;
+	status = "okay";
+};
+
+&hdmi {
+	/* [vendor-DT] hdmi_power0 = aldo1 (1.8 V), hdmi_power1 = dcdc1 */
+	hvcc-supply = <&reg_aldo1>;
+	status = "okay";
+};
+
+&hdmi_out {
+	hdmi_out_con: endpoint {
+		remote-endpoint = <&hdmi_con_in>;
+	};
+};
+
+&ir {
+	/* [vendor-DT] s_cir0 on PH10 */
+	status = "okay";
+};
+
+/* SDIO Wi-Fi/BT combo (AIC8800) on SMHC1 */
+&mmc1 {
+	vmmc-supply = <&reg_dldo1>;
+	vqmmc-supply = <&reg_aldo1>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	bus-width = <4>;
+	non-removable;
+	max-frequency = <50000000>;	/* [vendor-DT] sdc1 max-frequency */
+	cap-sdio-irq;			/* [vendor-DT] */
+	keep-power-in-suspend;		/* [vendor-DT] */
+	no-sd;
+	no-mmc;
+	status = "okay";
+
+	sdio_wifi: wifi@1 {
+		reg = <1>;
+	};
+};
+
+/*
+ * On-board eMMC on SMHC2.  [vendor-DT] sdc2: bus-width 8, non-removable,
+ * vmmc = dldo1 (3.3 V), vqmmc = aldo1 (1.8 V).  The vendor DT also lists
+ * HS200/HS400; we stay with the conservative settings used for the TX1
+ * (DDR52 @ 1.8 V, 100 MHz) - can be raised after the first successful boot.
+ */
+&mmc2 {
+	vmmc-supply = <&reg_dldo1>;
+	vqmmc-supply = <&reg_aldo1>;
+	bus-width = <8>;
+	non-removable;
+	max-frequency = <100000000>;
+	cap-mmc-hw-reset;
+	mmc-ddr-1_8v;
+	status = "okay";
+};
+
+/*
+ * microSD slot on SMHC0 (the owner's notes confirm a physical slot).  [vendor-DT]
+ * sdc0: 4 bit, card-detect on PI16 (active low), vmmc = dldo1.  The vendor driver
+ * switches the PF I/O rail between 3.3 V (dldo1) and 1.8 V (aldo1); how that is wired
+ * is UNVERIFIED, so no vqmmc is given => 3.3 V signalling, SD High-Speed at most.
+ * broken-cd (polling) is used instead of the PI16 detect line because its polarity
+ * / pull is not proven.  Useful as an extra boot/recovery medium: the BROM tries the
+ * SD card before the eMMC.
+ */
+&mmc0 {
+	vmmc-supply = <&reg_dldo1>;
+	bus-width = <4>;
+	broken-cd;
+	disable-wp;
+	cap-sd-highspeed;
+	no-sdio;
+	no-mmc;
+	status = "okay";
+};
+
+&ohci0 {
+	status = "okay";
+};
+
+&pio {
+	/* as TX1; vendor DT has PF/PG on a 1.8 V rail but no SD slot is used here */
+	vcc-pc-supply = <&reg_aldo1>;
+	vcc-pf-supply = <&reg_dldo1>;
+	vcc-pg-supply = <&reg_aldo1>;
+	vcc-ph-supply = <&reg_dldo1>;
+	vcc-pi-supply = <&reg_dldo1>;
+};
+
+/*
+ * PMIC: the vendor kernel calls it "axp1530" at 0x36 on R_I2C (twi@7081400).
+ * AXP1530 is the vendor-internal name of the AXP313A (same chip id 0x48 in
+ * reg 0x03, accepted by TF-A and U-Boot as AXP313).
+ * [vendor-DT] voltages read live from /sys/class/regulator:
+ *   dcdc1 0.96 V, dcdc2 1.10 V (cpu), dcdc3 1.20 V (DRAM), aldo1 1.8 V,
+ *   dldo1 3.3 V.
+ */
+&r_i2c {
+	status = "okay";
+
+	axp313: pmic@36 {
+		compatible = "x-powers,axp313a";
+		reg = <0x36>;
+		#interrupt-cells = <1>;
+		interrupt-controller;
+
+		vin1-supply = <&reg_vcc5v>;
+		vin2-supply = <&reg_vcc5v>;
+		vin3-supply = <&reg_vcc5v>;
+
+		regulators {
+			/* Supplies VCC-PLL, so needs to be always on. */
+			reg_aldo1: aldo1 {
+				regulator-always-on;
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-name = "vcc1v8";
+			};
+
+			/* Supplies VCC-IO, so needs to be always on. */
+			reg_dldo1: dldo1 {
+				regulator-always-on;
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-name = "vcc3v3";
+			};
+
+			reg_dcdc1: dcdc1 {
+				regulator-always-on;
+				regulator-min-microvolt = <810000>;
+				regulator-max-microvolt = <990000>;
+				regulator-name = "vdd-gpu-sys";
+			};
+
+			reg_dcdc2: dcdc2 {
+				regulator-always-on;
+				regulator-min-microvolt = <810000>;
+				regulator-max-microvolt = <1120000>;
+				regulator-name = "vdd-cpu";
+			};
+
+			/*
+			 * LPDDR3 VDD2: MUST stay at 1.2 V (vendor boot0 sets
+			 * 1200 mV; U-Boot AXP_DCDC3_VOLT=1200).  Never let a
+			 * consumer change this.
+			 */
+			reg_dcdc3: dcdc3 {
+				regulator-always-on;
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1200000>;
+				regulator-name = "vdd-dram";
+			};
+		};
+	};
+};
+
+&uart0 {
+	/* [vendor-DT] console ttyAS0 = uart0 (PH0/PH1), 115200 */
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart0_ph_pins>;
+	status = "okay";
+};
+
+&usbotg {
+	/* USB-A receptacle on USB0; VBUS switched by PH8 via the usbphy below */
+	dr_mode = "host";
+	status = "okay";
+};
+
+&usbphy {
+	usb0_vbus-supply = <&reg_usb0_vbus>;
+	status = "okay";
+};

@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0+
+// DQ10 TV stick: U-Boot device tree (local, NOT upstream).
+// = Tanix TX1 (same PMIC/eMMC/UART/USB wiring) + the microSD slot on SMHC0.
+// The vendor DT enables sdc0 (vmmc = dldo1, 4 bit, card-detect PI16 active low); the card-detect
+// polarity is unproven so broken-cd (always "present", probed) is used; 3.3 V signalling only.
+#include "sun50i-h313-tanix-tx1.dts"
+
+/ {
+	model = "DQ10 TV stick (athena_p1)";
+};
+
+&mmc0 {
+	vmmc-supply = <&reg_dldo1>;
+	bus-width = <4>;
+	broken-cd;
+	disable-wp;
+	status = "okay";
+};

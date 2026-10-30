@@ -1,0 +1,4 @@
+#=uEnv
+bootdelay=-2
+preboot=
+bootcmd=setenv stdin nulldev; gpio clear PH6; sleep 1; gpio set PH6; sleep 1; gpio clear PH6; setenv bootargs "console=tty1 loglevel=4 rdinit=/init dq10mode=ro"; fdt addr 0x4fa00000; fdt resize 65536; booti 0x40080000 0x4ff00000:0x20936b 0x4fa00000; while true; do gpio clear PH6; sleep 0.15; gpio set PH6; sleep 0.15; gpio clear PH6; sleep 0.15; gpio set PH6; sleep 0.15; gpio clear PH6; sleep 0.15; gpio set PH6; sleep 1.5; done

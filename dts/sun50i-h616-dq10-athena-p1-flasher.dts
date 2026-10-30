@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * DQ10 "flasher" variant: the board DT plus the changes that turn the USB-A
+ * port (USB0 / MUSB) into a USB DEVICE (gadget) port, used by the FEL-booted RAM-only
+ * flasher system (docs/FLASH-PLAN.md, Route L).  Never used for the installed system.
+ *
+ *  - &usbotg dr_mode = "peripheral": the MUSB glue (CONFIG_USB_MUSB_SUNXI, module
+ *    "sunxi") starts as a gadget controller.  phy-sun4i-usb takes the dr_mode of the
+ *    first enabled controller that references PHY0 (of_usb_get_dr_mode_by_phy; usbotg
+ *    comes first in the dtsi) => id_det = 1 => PHY0 is routed to MUSB
+ *    (OTGCTL_ROUTE_MUSB, sun4i_usb_phy0_reroute) and passby is off.
+ *  - &ehci0/&ohci0 disabled: they share PHY0; with PHY0 routed to MUSB they would only
+ *    power on the PHY / ask for VBUS for nothing.
+ *  - usb0_vbus-supply REMOVED from &usbphy: the stick must NOT drive VBUS (PH8) on the
+ *    A-A cable, the laptop drives it too.  With no supply, phy->vbus is NULL, and without
+ *    usb0_vbus_det / vbus power-supply the PHY driver reports VBUS "valid" (forced), so no
+ *    VBUS sensing is needed.  The regulator-fixed node "usb0-vbus" itself stays (nothing
+ *    consumes it; the regulator core leaves PH8 requested as output LOW = VBUS off).
+ *  - &mmc0 (microSD) disabled: this system must only ever see the eMMC.
+ *
+ * Build: scripts/build-flasher.sh (cpp + dtc -@ against the 6.18.53 tree + Armbian 0041/0042).
+ */
+
+#include "sun50i-h616-dq10-athena-p1.dts"
+
+/ {
+	model = "DQ10 TV stick (athena_p1) - FEL flasher";
+};
+
+&usbotg {
+	dr_mode = "peripheral";
+};
+
+&ehci0 {
+	status = "disabled";
+};
+
+&ohci0 {
+	status = "disabled";
+};
+
+&usbphy {
+	/delete-property/ usb0_vbus-supply;
+};
+
+&mmc0 {
+	status = "disabled";
+};

@@ -1,0 +1,16 @@
+[Unit]
+Description=DQ10: wipe leftover vendor data from eMMC (one-shot, before root resize)
+ConditionPathExists=!/var/lib/dq10/wipe-done
+DefaultDependencies=no
+After=local-fs.target systemd-udev-settle.service
+Before=armbian-resize-filesystem.service basic.target
+Wants=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dq10-wipe-vendor.sh
+TimeoutStartSec=3h
+RemainAfterExit=yes
+
+[Install]
+WantedBy=basic.target

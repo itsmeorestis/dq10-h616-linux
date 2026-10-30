@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0+
+// DQ10 RECOVERY U-Boot device tree (local, not upstream): DQ10 + USB0 in peripheral mode
+// so that "ums" can export the eMMC to a PC when booted via FEL.
+#include "sun50i-h313-dq10.dts"
+&usbotg {
+	dr_mode = "peripheral";
+};
