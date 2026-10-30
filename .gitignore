@@ -1,0 +1,42 @@
+# Binaries and build outputs are NOT kept in git (they come later as a generic Release).
+*.bin
+*.elf
+*.dtb
+*.scr
+*.img
+*.img.*
+*.ext4
+*.ext4.*
+*.gz
+*.xz
+*.cpio
+*.cpio.*
+*.deb
+*.apk
+*.ko
+*.o
+Image
+initramfs*
+flasher/Image
+felbundle/Image
+# build trees, downloads, scratch
+/image/
+/dl-*/
+/tools-*/
+/work/
+/out/
+*.log
+# YOUR private data: backups of the vendor eMMC, hash lists, keys, Wi-Fi credentials.
+# (Never commit any of these: they contain unique device identifiers or secrets.)
+backup/
+*backup*/
+partition-hashes*
+preboot-area*
+*.rev*
+*.bak
+authorized_keys
+*.pub
+id_*
+*.pem
+*.key
+.ssh/
